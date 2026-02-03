@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Absensi Guru Plus Foto</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f2f5; padding: 20px; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); max-width: 400px; margin: auto; }
+        select, input, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box; }
+        #preview { width: 100%; border-radius: 8px; display: none; margin-top: 10px; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        #statusLabel { padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>📍 Absensi Guru</h2>
+    
+    <select id="namaGuru">
+        <option value="">-- Memuat Nama... --</option>
+    </select>
+
+    <select id="statusAbsen">
+        <option value="Hadir">Hadir (Wajib di Lokasi)</option>
+        <option value="Izin">Izin</option>
+        <option value="Sakit">Sakit</option>
+    </select>
+
+    <p style="text-align:left; font-size:12px; margin-bottom:2px;">Ambil Foto Bukti:</p>
+    <input type="file" id="fotoInput" accept="image/*" capture="camera">
+    <img id="preview" src="" alt="Preview Foto">
+
+    <div id="statusLabel" class="waiting">Mendeteksi lokasi...</div>
+
+    <button id="btnAbsen" disabled>Kirim Absensi</button>
+</div>
+
+<script>
+    const schoolLat = -7.541549; 
+    const schoolLng = 108.696524;
+    const maxRadius = 50;
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxI-C1VyExxd6I8Ldyha3I6kUEozjgW2p1uVjGOiqDLSfU4Wb6v8s3X1Xrpisk9KpVZ8w/exec';
+
+    const selectNama = document.getElementById('namaGuru');
+    const selectStatus = document.getElementById('statusAbsen');
+    const fotoInput = document.getElementById('fotoInput');
+    const preview = document.getElementById('preview');
+    const statusLabel = document.getElementById('statusLabel');
+    const btnAbsen = document.getElementById('btnAbsen');
+    
+    let userDistance = 0;
+    let base64Foto = "";
+
+    // 1. Ambil Nama Otomatis
+    window.onload = () => {
+        fetch(scriptURL).then(res => res.json()).then(names => {
+            selectNama.innerHTML = '<option value="">-- Pilih Nama --</option>';
+            names.forEach(n => {
+                let o = document.createElement('option'); o.value = n; o.text = n;
+                selectNama.appendChild(o);
+            });
+        });
+    };
+
+    // 2. Preview Foto & Konversi ke Base64
+    fotoInput.onchange = function() {
+        const file = this.files[0];
+        const reader = new FileReader();
+        reader.onloadend = function() {
+            base64Foto = reader.result;
+            preview.src = base64Foto;
+            preview.style.display = "block";
+        }
+        if (file) reader.readAsDataURL(file);
+    };
+// Ganti fungsi fotoInput.onchange lama dengan yang ini:
+fotoInput.onchange = function() {
+    const file = this.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = function(event) {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = function() {
+            // LOGIKA KOMPRESI FOTO
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800; // Ukuran lebar maksimal
+            let width = img.width;
+            let height = img.height;
+
+            if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Konversi ke JPEG dengan kualitas 0.7 (Kompresi)
+            base64Foto = canvas.toDataURL('image/jpeg', 0.7); 
+            preview.src = base64Foto;
+            preview.style.display = "block";
+        }
+    };
+};
+    // 3. Cek Lokasi (Hanya membatasi jika status "Hadir")
+    function checkLogic() {
+        const status = selectStatus.value;
+        if (status === "Hadir") {
+            if (userDistance <= maxRadius) {
+                statusLabel.innerHTML = "✅ Lokasi Sesuai";
+                statusLabel.className = "success";
+                btnAbsen.disabled = false;
+            } else {
+                statusLabel.innerHTML = "❌ Anda di luar jangkauan sekolah!";
+                statusLabel.className = "error";
+                btnAbsen.disabled = true;
+            }
+        } else {
+            // Jika Izin atau Sakit, tombol tetap aktif meski jauh dari sekolah
+            statusLabel.innerHTML = "ℹ️ Status Izin/Sakit (Lokasi diabaikan)";
+            statusLabel.className = "success";
+            btnAbsen.disabled = false;
+        }
+    }
+
+    // Pantau Geolocation
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+            userDistance = calculateDistance(pos.coords.latitude, pos.coords.longitude, schoolLat, schoolLng);
+            checkLogic();
+        });
+    }
+
+    selectStatus.onchange = checkLogic;
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const dLat = (lat2-lat1)*Math.PI/180;
+        const dLon = (lon2-lon1)*Math.PI/180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // 4. Kirim Data
+    btnAbsen.onclick = () => {
+        if (!selectNama.value || !base64Foto) return alert("Lengkapi Nama dan Foto!");
+        
+        btnAbsen.innerText = "Sedang Mengirim...";
+        btnAbsen.disabled = true;
+
+        fetch(scriptURL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({
+                nama: selectNama.value,
+                status_absen: selectStatus.value,
+                jarak: Math.round(userDistance),
+                foto: base64Foto
+            })
+        }).then(() => {
+            alert("Absensi Berhasil!");
+            location.reload();
+        });
+    };
+</script>
+</body>
+</html>
