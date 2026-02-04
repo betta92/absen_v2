@@ -138,7 +138,21 @@ fotoInput.onchange = function() {
             checkLogic();
         });
     }
+const geoOptions = {
+    enableHighAccuracy: true, // Memaksa GPS (bukan hanya tower seluler)
+    timeout: 10000,           // Menunggu maksimal 10 detik
+    maximumAge: 0             // Tidak menggunakan data lokasi lama (cache)
+};
 
+if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(pos => {
+        userDistance = calculateDistance(pos.coords.latitude, pos.coords.longitude, schoolLat, schoolLng);
+        checkLogic();
+    }, err => {
+        console.warn(`ERROR(${err.code}): ${err.message}`);
+        statusLabel.innerHTML = "⚠️ Sinyal GPS lemah atau izin ditolak.";
+    }, geoOptions);
+}
     selectStatus.onchange = checkLogic;
 
     function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -174,6 +188,7 @@ fotoInput.onchange = function() {
 </body>
 
 </html>
+
 
 
 
